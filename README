@@ -1,0 +1,28 @@
+This is a mirror of http://www.vim.org/scripts/script.php?script_id=1164
+
+Place cursor over a java classname and enter the scripts map key sequence (I  map it to ",g"). The base java file name is <cword> . ".java" 
+
+First if the cursor is over a package classname like 'java.util.Map', then if the cursor is over 'Map', the java/util/Map.java file is opened else if the cursor is over, say, 'util', then the java/util directory is opened. 
+
+Otherwise, the script looks for a file with the filename in local directory and  if it exists, opens it.
+
+If not, it looks for an explicit import file with the filename, if it can be found  in the java source path, then it opens it. If not found, use 'locate' command to look for filename plus import package directories prepended. If found then open it.
+
+If not, it looks for a file in "$JAVA_HOME/src/java/lang" and if found opens it. 
+
+If not it then looks for a match using any of the implicit import statements, those ending in * and in the java source path. If found open it. Otherwise use 'locate' command to search for filename plus import package path prepended and if found open it.
+
+Lastly, if not found by any of the above methods it then attempts to find a file using the package path. The current file might be in a parallel junit directory or in some parallel directory structure. If this is found in the java source path then it is opened otherwise it uses "locate' command to search for the file and if found opens it.
+
+EditJava plus the bufexplorer.vim script, 
+the "edit cwd" Tip #2:
+map ,d :e <C-R>=expand("%:p:h")<CR><CR>  
+and the mapping allowing one to toggle between files
+map gg :e#^M 
+with the buffer edit commands (where N is an integer)
+:bp
+:bpN
+:bn
+:bpN                         
+provide one with a collection of tools to view and navigate Java sources.
+
