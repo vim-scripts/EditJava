@@ -1,7 +1,7 @@
 " Set of functions to open a Java file based on word under cursor.
 " Maintained by Richard Emberson <rembersonATedgedynamicsDOTcom>
 "    some code based upon java import by Darren Greaves
-" Version 1.0
+" Version 1.1
 "
 " Suggested stuff to add to your ~.vimrc:
 " source $HOME/vim/javae.vim
@@ -14,8 +14,8 @@
 " let $JAVASOURCEPATH = $JAVASOURCEPATH . ",$HOME/java/jakarta/jakarta-tomcat/jakarta-servletapi-5/jsr154/src/share/"
 " map ,g :call EditJava($JAVASOURCEPATH)<CR>
 "
-" if you want to debug
-" map ,g :debug:call EditJava($JAVASOURCEPATH)<CR>
+" if you want to debug, comment out above line and uncomment below line
+" "map ,g :debug:call EditJava($JAVASOURCEPATH)<CR>
 "
 " Your java source path, of course, be different.
 "
@@ -33,19 +33,69 @@
 " Place cursor over a word and attempt to find a java file with the give name.
 "
 " The following matches are attempted:
-"  1) Is there a local file with the name <cword>.java
+"  1) Is the cursor over a full package classname (e.g., java.util.Map)
+"     If so is it over the classname (Map)
+"       If so open it.
+"     Or it is over on of the package names (util)
+"       If so open the directory (java/util).
+"  2) Is there a local file with the name <cword>.java
 "     If so open it.
-"  2) Is there an import statement with that file identified explicitly
+"  3) Is there an import statement with that file identified explicitly
 "     (e.g., java.util.Map for Map).
 "     If so open it.
-"  3) Is it a file located in "$JAVA_HOME/src/java/lang/" directory
+"  4) Is it a file located in "$JAVA_HOME/src/java/lang/" directory
 "     If so open it.
-"  4) Is there an import statement with that file identified implicitly.
+"  5) Is there an import statement with that file identified implicitly.
 "     (e.g., java.util.* for Map).
 "     If so open it.
 "
 function! EditJava(javapath)
-    let cword = expand("<cword>")
+    let dot_regex = '\k'
+    let hasdot = matchstr('.', dot_regex)
+
+    " Does keyword contain '.'
+    " (Note: there maybe a better/faster way but this is what I came up with)
+    if (hasdot == "")
+        " no, get cword and then full (including '.'s) cdotword
+        let cword = expand("<cword>")
+        set iskeyword+=.
+        let cdotword = expand("<cword>")
+        set iskeyword-=.
+    else
+        " yes, get cdotword (including '.'s) and then cword
+        let cdotword = expand("<cword>")
+        set iskeyword-=.
+        let cword = expand("<cword>")
+        set iskeyword+=.
+    endif
+
+    " If cword and cdotword are not equal, then we are looking at
+    " a full package path class name, i.e., java.util.Map.
+    if (cword != cdotword)
+        " If the cursor is over the classname in the package path,
+        " then look up the class.
+        " Otherwise, look up directory and open the directory
+        let dotlen = strlen(cdotword)
+        let end = matchend(cdotword, cword)
+
+        if (dotlen == end)
+            " cword is at end of cdotword, edit file
+            let file = SwapDotForSlash(cdotword)
+            let file = ExecutePathMatch(file,a:javapath)
+            if (file != "") 
+                return file
+            endif
+        else
+            " cword is in the middle of cdotword, edit directory
+            let part_dotword = strpart(cdotword, 0, end)
+            let dir = SwapDotForSlash(part_dotword)
+            let dir = ExecuteDirMatch(dir,a:javapath)
+            if (dir != "") 
+                return dir
+            endif
+        endif
+    endif
+
 
     " local match
     let fullfile = GetLocal(cword)
@@ -188,6 +238,27 @@ function! ExecutePathMatch(file, javapath)
                 execute 'browse confirm e $FILE'
             endif
         elseif (filereadable(expand(lfile)))
+            let $FILE = lfile
+            execute 'e $FILE'
+            return lfile
+        endif
+    endwhile
+    return ""
+endfunction
+
+" search through javapath for matching dir
+function! ExecuteDirMatch(dir, javapath)
+    let javapath = a:javapath
+    let path = a:javapath
+    let regex = "^[^,]*"
+
+    while (strlen(javapath))
+        let path = GetFirstPathElement(javapath, regex)
+
+        let javapath = RemoveFirstPathElement(javapath, regex)
+        let lfile = path . "/" . a:dir
+
+        if (isdirectory(expand(lfile)))
             let $FILE = lfile
             execute 'e $FILE'
             return lfile
