@@ -1,7 +1,8 @@
+"
 " Set of functions to open a Java file based on word under cursor.
 " Maintained by Richard Emberson <rembersonATedgedynamicsDOTcom>
-"    some code based upon java import by Darren Greaves
-" Version 1.1
+"    some code based upon JavaImport by Darren Greaves
+" Version 1.2
 "
 " Suggested stuff to add to your ~.vimrc:
 " source $HOME/vim/javae.vim
@@ -12,10 +13,15 @@
 " let $JAVASOURCEPATH = $JAVASOURCEPATH . ",$HOME/java/jakarta/commons-lang/src/java"
 " let $JAVASOURCEPATH = $JAVASOURCEPATH .  ",$HOME/java/jakarta/commons-collections/src/java"
 " let $JAVASOURCEPATH = $JAVASOURCEPATH . ",$HOME/java/jakarta/jakarta-tomcat/jakarta-servletapi-5/jsr154/src/share/"
-" map ,g :call EditJava($JAVASOURCEPATH)<CR>
+" goto
+" map ,g :call EditJava('e',$JAVASOURCEPATH)<CR>
+" horizontal
+" map ,h :call EditJava('sp',$JAVASOURCEPATH)<CR>
+" vertical
+" map ,v :call EditJava('vsp',$JAVASOURCEPATH)<CR>
 "
 " if you want to debug, comment out above line and uncomment below line
-" "map ,g :debug:call EditJava($JAVASOURCEPATH)<CR>
+" "map ,g :debug:call EditJava('e',$JAVASOURCEPATH)<CR>
 "
 " Your java source path, of course, be different.
 "
@@ -49,7 +55,54 @@
 "     (e.g., java.util.* for Map).
 "     If so open it.
 "
-function! EditJava(javapath)
+
+"
+" main entry point
+"   parameters
+"     cmd: can be any command that take a file name or directory 
+"          as second argument:
+"       e, vsplit, new, split, vertical, sview, vnew , etc.
+"     javapath: ',' separate paths to java source
+"
+function! EditJava(cmd,javapath)
+    let cword = expand("<cword>")
+
+    " package classname
+    let file = OverPackageClassName(a:javapath)
+
+    " local match
+    if (file == "") 
+        let file = GetLocal(cword)
+    endif
+
+    " explicit import 
+    if (file == "") 
+        let file = GetExplicitImport(cword,a:javapath)
+    endif
+
+    " look in java/lang
+    if (file == "") 
+        let file = GetJavaLang(cword)
+    endif
+
+    " implicit import 
+    if (file == "") 
+        let file = GetImlicitImport(cword,a:javapath)
+    endif
+
+    if (file != "") 
+        let $CMD = a:cmd . " " . file
+        execute $CMD
+        return
+    endif
+
+    echohl WarningMsg
+    echo "Error: Could not find file matching '" . cword . "'"
+    echohl None
+endfunction
+
+" is the cursor over a package classname
+function! OverPackageClassName(javapath)
     let dot_regex = '\k'
     let hasdot = matchstr('.', dot_regex)
 
@@ -82,58 +135,16 @@ function! EditJava(javapath)
             " cword is at end of cdotword, edit file
             let file = SwapDotForSlash(cdotword)
             let file = ExecutePathMatch(file,a:javapath)
-            if (file != "") 
-                return file
-            endif
+            return file
         else
             " cword is in the middle of cdotword, edit directory
             let part_dotword = strpart(cdotword, 0, end)
             let dir = SwapDotForSlash(part_dotword)
             let dir = ExecuteDirMatch(dir,a:javapath)
-            if (dir != "") 
-                return dir
-            endif
+            return dir
         endif
     endif
-
-
-    " local match
-    let fullfile = GetLocal(cword)
-    if (fullfile != "") 
-        if (filereadable(expand(fullfile)))
-            let $FILE = fullfile
-            execute 'e $FILE'
-            return fullfile
-        endif
-    endif
-
-    " explicit import 
-    let path = GetExplicitImport(cword)
-    let file = SwapDotForSlash(path)
-    if (file != "") 
-        let file = ExecutePathMatch(file,a:javapath)
-        if (file != "") 
-            return file
-        endif
-    endif
-
-    " look in java/lang
-    if ($JAVA_HOME != "") 
-        let file = $JAVA_HOME . "/src/java/lang/" . cword . ".java"
-        if (filereadable(expand(file)))
-            let $FILE = file
-            execute 'e $FILE'
-            return file
-        endif
-    endif
-
-    " implicit import 
-    let file = GetImlicitImport(cword,a:javapath)
-    if (file != "") 
-        return file
-    endif
-
-    return path
+    return ""
 endfunction
 
 " is the file in the same directory as the current file/buffer
@@ -149,15 +160,21 @@ function! GetLocal(cword)
 
     let path = substitute(l, path_regex, '\1', '')
     if (path == "") 
-        return jfile
+        let file = jfile
     else
-        return path . jfile
+        let file = path . jfile
+    endif
+
+    if (filereadable(expand(file)))
+        return file
+    else
+        return ""
     endif
 
 endfunction
 
 " is there an import statement exactly matching the file
-function! GetExplicitImport(cword)
+function! GetExplicitImport(cword,javapath)
     let import_regex = '^import\s\+\(\S\+\);.*$'
     let file_regex = '^\f\+'
     let index = 0
@@ -182,9 +199,14 @@ function! GetExplicitImport(cword)
             continue
         endif
 
+        let file = SwapDotForSlash(file)
+        let file = ExecutePathMatch(file,a:javapath)
         return file
+
     endwhile
+
     return ""
+
 endfunction
 
 " is there an import statement that end with * matching the file
@@ -209,12 +231,20 @@ function! GetImlicitImport(cword,javapath)
         let file = file . a:cword
         let file = SwapDotForSlash(file)
         let file = ExecutePathMatch(file,a:javapath)
-        if (file != "") 
-            return file
-        endif
 
         return file
     endwhile
+    return ""
+endfunction
+
+" see if its in java/lang
+function! GetJavaLang(cword)
+    if ($JAVA_HOME != "") 
+        let file = $JAVA_HOME . "/src/java/lang/" . a:cword . ".java"
+        if (filereadable(expand(file)))
+            return file
+        endif
+    endif
     return ""
 endfunction
 
@@ -231,15 +261,7 @@ function! ExecutePathMatch(file, javapath)
         let javapath = RemoveFirstPathElement(javapath, regex)
         let lfile = path . "/" . a:file . ".java"
 
-        if ((match(lfile, "\*\.java$") != -1) && has("gui_running"))
-            let lfile = substitute(lfile, "\*\.java$", "", "")
-            if (isdirectory(expand(lfile)))
-                let $FILE = lfile
-                execute 'browse confirm e $FILE'
-            endif
-        elseif (filereadable(expand(lfile)))
-            let $FILE = lfile
-            execute 'e $FILE'
+        if (filereadable(expand(lfile)))
             return lfile
         endif
     endwhile
@@ -247,6 +269,7 @@ function! ExecutePathMatch(file, javapath)
 endfunction
 
 " search through javapath for matching dir
+"    code from java import by Darren Greaves
 function! ExecuteDirMatch(dir, javapath)
     let javapath = a:javapath
     let path = a:javapath
@@ -259,8 +282,6 @@ function! ExecuteDirMatch(dir, javapath)
         let lfile = path . "/" . a:dir
 
         if (isdirectory(expand(lfile)))
-            let $FILE = lfile
-            execute 'e $FILE'
             return lfile
         endif
     endwhile
